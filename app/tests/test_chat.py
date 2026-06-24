@@ -1,10 +1,8 @@
 """
 Tests for chat endpoints.
-
-Note: These tests require mocking the Gemini API calls.
 """
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import status
 
@@ -22,22 +20,10 @@ def test_send_message_success(client):
     )
     session_id = session_response.json()["session_id"]
 
-    # Mock the Gemini API call
     with patch(
-        "app.chatgraph.nodes.ChatNodes.call_gemini_node"
-    ) as mock_gemini:
-        # Make the node function return a state with assistant response
-        def mock_gemini_call(state):
-            messages = state.get("messages", [])
-            messages.append({
-                "role": "assistant",
-                "content": "This is a test response from Gemini."
-            })
-            return {"messages": messages}
-
-        mock_gemini.side_effect = mock_gemini_call
-
-        # Send a message
+        "app.api.routers.chat.langgraph_service.execute_chat",
+        new=AsyncMock(return_value="This is a test response from Gemini."),
+    ):
         response = client.post(
             "/api/v1/chat/message",
             json={
@@ -56,6 +42,70 @@ def test_send_message_success(client):
         assert isinstance(data["conversation_history"], list)
 
 
+def test_send_message_answers_products_query_with_nl_to_sql(client, db):
+    """Chat should answer products/orders questions from the ecommerce tables."""
+    token = register_and_get_token(client)
+
+    session_response = client.post(
+        "/api/v1/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    session_id = session_response.json()["session_id"]
+
+    with patch(
+        "app.api.routers.chat.langgraph_service.execute_chat",
+        new=AsyncMock(
+            return_value=(
+                "I found 2 matching record(s):\n"
+                "- name=Luna Smart Watch, price=149.0\n"
+                "- name=Aurora Wireless Headphones, price=129.99"
+            )
+        ),
+    ):
+        response = client.post(
+            "/api/v1/chat/message",
+            json={
+                "session_id": session_id,
+                "message": "Show me the two most expensive products",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    assert "assistant_message" in data
+    assert "I found 2 matching record(s):" in data["assistant_message"]
+    assert "Luna Smart Watch" in data["assistant_message"]
+    assert "Aurora Wireless Headphones" in data["assistant_message"]
+
+
+def test_send_message_falls_back_when_query_is_not_for_products_or_orders(client):
+    """Non-ecommerce chat should continue through the existing assistant flow."""
+    token = register_and_get_token(client)
+
+    session_response = client.post(
+        "/api/v1/sessions",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    session_id = session_response.json()["session_id"]
+
+    with patch(
+        "app.api.routers.chat.langgraph_service.execute_chat",
+        new=AsyncMock(return_value="This is a test response from Gemini."),
+    ):
+        response = client.post(
+            "/api/v1/chat/message",
+            json={
+                "session_id": session_id,
+                "message": "What is the capital of France?",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["assistant_message"] == "This is a test response from Gemini."
+
+
 def test_send_message_returns_upstream_error(client):
     """Test upstream model failures return an HTTP error instead of fake assistant text."""
     token = register_and_get_token(client)
@@ -67,8 +117,8 @@ def test_send_message_returns_upstream_error(client):
     session_id = session_response.json()["session_id"]
 
     with patch(
-        "app.chatgraph.nodes.ChatNodes.call_gemini_node",
-        side_effect=RuntimeError("Gemini API HTTP error: 401"),
+        "app.api.routers.chat.langgraph_service.execute_chat",
+        new=AsyncMock(side_effect=RuntimeError("Gemini API HTTP error: 401")),
     ):
         response = client.post(
             "/api/v1/chat/message",
@@ -142,18 +192,9 @@ def test_conversation_history(client):
     ]
 
     with patch(
-        "app.chatgraph.nodes.ChatNodes.call_gemini_node"
-    ) as mock_gemini:
-        def mock_gemini_call(state):
-            msg_list = state.get("messages", [])
-            msg_list.append({
-                "role": "assistant",
-                "content": "Response message"
-            })
-            return {"messages": msg_list}
-
-        mock_gemini.side_effect = mock_gemini_call
-
+        "app.api.routers.chat.langgraph_service.execute_chat",
+        new=AsyncMock(return_value="Response message"),
+    ):
         # Send multiple messages
         for message in messages:
             response = client.post(

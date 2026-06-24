@@ -1,7 +1,5 @@
 """
 LangGraph graph definition for the chat workflow.
-
-Uses the latest LangGraph syntax with StateGraph and MessagesState.
 """
 
 from typing import Any
@@ -14,6 +12,7 @@ from app.services.gemini_client import GeminiClient
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+MAX_SQL_REPAIR_ATTEMPTS = 3
 
 
 def create_chat_state() -> type:
@@ -28,8 +27,11 @@ def create_chat_state() -> type:
         """
         Extended MessagesState for our chat workflow.
         """
-
-        pass
+        route: str
+        db: Any
+        sql_query: str
+        sql_error: str
+        repair_attempts: int
 
     return ChatState
 
@@ -37,12 +39,6 @@ def create_chat_state() -> type:
 def create_chat_graph():
     """
     Create and compile the chat workflow graph.
-
-    The graph follows this flow:
-    1. START -> process_input (validate input)
-    2. process_input -> call_gemini (call Gemini API)
-    3. call_gemini -> format_output (format response)
-    4. format_output -> END
 
     Returns:
         Compiled LangGraph StateGraph
@@ -54,16 +50,51 @@ def create_chat_graph():
     nodes = ChatNodes(gemini_client=gemini_client)
 
     # Create graph
-    graph_builder = StateGraph(MessagesState)
+    graph_builder = StateGraph(create_chat_state())
 
     # Add nodes
     graph_builder.add_node("process_input", nodes.process_input_node)
+    graph_builder.add_node("classify_intent", nodes.classify_intent_node)
+    graph_builder.add_node("generate_sql", nodes.generate_sql_node)
+    graph_builder.add_node("validate_execute_sql", nodes.validate_execute_sql_node)
+    graph_builder.add_node("repair_sql", nodes.repair_sql_node)
     graph_builder.add_node("call_gemini", nodes.call_gemini_node)
     graph_builder.add_node("format_output", nodes.format_output_node)
 
     # Add edges
     graph_builder.add_edge(START, "process_input")
-    graph_builder.add_edge("process_input", "call_gemini")
+    graph_builder.add_edge("process_input", "classify_intent")
+    graph_builder.add_conditional_edges(
+        "classify_intent",
+        lambda state: state.get("route", "general_chat"),
+        {
+            "ecommerce_query": "generate_sql",
+            "general_chat": "call_gemini",
+        },
+    )
+    graph_builder.add_conditional_edges(
+        "generate_sql",
+        lambda state: "call_gemini" if state.get("sql_query") == "UNSUPPORTED" else "validate_execute_sql",
+        {
+            "call_gemini": "call_gemini",
+            "validate_execute_sql": "validate_execute_sql",
+        },
+    )
+    graph_builder.add_conditional_edges(
+        "validate_execute_sql",
+        lambda state: (
+            "repair_sql"
+            if state.get("sql_error")
+            and state.get("repair_attempts", 0) < MAX_SQL_REPAIR_ATTEMPTS
+            else "call_gemini" if state.get("sql_error") else "format_output"
+        ),
+        {
+            "repair_sql": "repair_sql",
+            "call_gemini": "call_gemini",
+            "format_output": "format_output",
+        },
+    )
+    graph_builder.add_edge("repair_sql", "validate_execute_sql")
     graph_builder.add_edge("call_gemini", "format_output")
     graph_builder.add_edge("format_output", END)
 
@@ -93,5 +124,6 @@ def get_graph_visualization() -> str:
 
     return (
         "Graph Flow:\n"
-        "START -> process_input -> call_gemini -> format_output -> END"
+        "START -> process_input -> classify_intent -> "
+        "[generate_sql -> validate_execute_sql -> repair_sql?] or [call_gemini] -> format_output -> END"
     )

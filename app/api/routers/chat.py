@@ -114,6 +114,7 @@ async def send_message(
         assistant_response = await langgraph_service.execute_chat(
             conversation_history=conversation_history,
             user_message=chat_request.message,
+            db=db,
         )
 
         # Store assistant response

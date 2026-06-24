@@ -6,6 +6,7 @@ from typing import List
 import asyncio
 
 from langchain_core.messages import HumanMessage, AIMessage
+from sqlalchemy.orm import Session
 from app.chatgraph.workflow import create_chat_graph
 from app.services.gemini_client import GeminiClientError
 from app.core.logging import get_logger
@@ -25,6 +26,7 @@ class LangGraphService:
         self,
         conversation_history: List[dict],
         user_message: str,
+        db: Session,
     ) -> str:
         """
         Execute the chat workflow using LangGraph.
@@ -56,7 +58,12 @@ class LangGraphService:
             
             # Build the state for the graph
             state = {
-                "messages": langchain_messages
+                "messages": langchain_messages,
+                "db": db,
+                "repair_attempts": 0,
+                "route": "general_chat",
+                "sql_query": "",
+                "sql_error": "",
             }
 
             logger.debug(f"Initial state with {len(langchain_messages)} messages")

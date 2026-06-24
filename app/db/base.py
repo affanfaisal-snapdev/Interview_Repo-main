@@ -49,7 +49,11 @@ def create_all_tables() -> None:
     Create all database tables.
     """
     try:
+        from app.db.ecommerce import seed_ecommerce_data
+
         Base.metadata.create_all(bind=engine)
+        with SessionLocal() as db:
+            seed_ecommerce_data(db)
         logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")

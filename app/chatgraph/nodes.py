@@ -8,7 +8,10 @@ from typing import Any
 import asyncio
 
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from sqlalchemy.orm import Session
+
 from app.services.gemini_client import GeminiClient, GeminiClientError, Message
+from app.services.nl_to_sql import NLToSQLService
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -87,6 +90,63 @@ class ChatNodes:
             logger.error(f"Error calling Gemini: {str(e)}")
             raise
 
+    def classify_intent_node(self, state: dict[str, Any]) -> dict[str, Any]:
+        """
+        Route likely ecommerce data questions into the NL-to-SQL branch.
+        """
+        logger.info("Executing classify_intent_node")
+        user_message = self._get_latest_user_message(state)
+        route = "ecommerce_query" if NLToSQLService.is_ecommerce_query(user_message) else "general_chat"
+        return {"route": route}
+
+    def generate_sql_node(self, state: dict[str, Any]) -> dict[str, Any]:
+        """
+        Generate SQL for products/orders questions.
+        """
+        logger.info("Executing generate_sql_node")
+        db = self._get_db_session(state)
+        user_message = self._get_latest_user_message(state)
+        service = NLToSQLService(db=db, gemini_client=self.gemini_client)
+        sql_query = asyncio.run(service.generate_sql(user_message))
+        return {"sql_query": sql_query}
+
+    def validate_execute_sql_node(self, state: dict[str, Any]) -> dict[str, Any]:
+        """
+        Validate and execute the generated SQL.
+        """
+        logger.info("Executing validate_execute_sql_node")
+        db = self._get_db_session(state)
+        sql_query = state.get("sql_query", "")
+        service = NLToSQLService(db=db, gemini_client=self.gemini_client)
+
+        if sql_query == "UNSUPPORTED":
+            return {"route": "general_chat", "sql_error": "", "sql_query": ""}
+
+        try:
+            validated_sql = service.validate_sql(sql_query)
+            rows = service.execute_sql(validated_sql)
+            response_text = service.format_response(rows)
+            messages = list(state.get("messages", []))
+            messages.append(AIMessage(content=response_text))
+            return {"messages": messages, "sql_error": ""}
+        except ValueError as exc:
+            logger.warning("SQL validation/execution failed: %s", exc)
+            return {"sql_error": str(exc)}
+
+    def repair_sql_node(self, state: dict[str, Any]) -> dict[str, Any]:
+        """
+        Repair a failed SQL query once using the model.
+        """
+        logger.info("Executing repair_sql_node")
+        db = self._get_db_session(state)
+        user_message = self._get_latest_user_message(state)
+        sql_query = state.get("sql_query", "")
+        sql_error = state.get("sql_error", "")
+        repair_attempts = state.get("repair_attempts", 0) + 1
+        service = NLToSQLService(db=db, gemini_client=self.gemini_client)
+        repaired_sql = asyncio.run(service.repair_sql(user_message, sql_query, sql_error))
+        return {"sql_query": repaired_sql, "repair_attempts": repair_attempts, "sql_error": ""}
+
     def process_input_node(self, state: dict[str, Any]) -> dict[str, Any]:
         """
         Node that processes and validates input.
@@ -136,3 +196,20 @@ class ChatNodes:
         # No need to modify LangChain message objects
         logger.debug(f"Formatted {len(messages)} messages")
         return {"messages": messages}
+
+    @staticmethod
+    def _get_latest_user_message(state: dict[str, Any]) -> str:
+        messages = state.get("messages", [])
+        for message in reversed(messages):
+            if isinstance(message, HumanMessage):
+                return message.content
+            if isinstance(message, dict) and message.get("role") == "user":
+                return message.get("content", "")
+        return ""
+
+    @staticmethod
+    def _get_db_session(state: dict[str, Any]) -> Session:
+        db = state.get("db")
+        if db is None:
+            raise RuntimeError("Database session missing from graph state")
+        return db

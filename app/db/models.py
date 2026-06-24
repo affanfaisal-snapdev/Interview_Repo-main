@@ -5,7 +5,17 @@ SQLAlchemy ORM models for database entities.
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Index, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -32,6 +42,33 @@ class UserModel(Base):
 
     def __repr__(self) -> str:
         return f"<UserModel id={self.id} email={self.email}>"
+
+
+class ProductModel(Base):
+    """
+    Product catalog model for ecommerce-style inventory.
+    """
+
+    __tablename__ = "products"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    name = Column(String(255), nullable=False, index=True)
+    category = Column(String(100), nullable=False, index=True)
+    description = Column(Text, nullable=False)
+    price = Column(Float, nullable=False)
+    stock_quantity = Column(Integer, nullable=False, default=0)
+    image_url = Column(String(500), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    orders = relationship(
+        "OrderModel",
+        back_populates="product",
+        lazy="select",
+    )
+
+    def __repr__(self) -> str:
+        return f"<ProductModel id={self.id} name={self.name}>"
 
 
 class SessionModel(Base):
@@ -61,6 +98,38 @@ class SessionModel(Base):
 
     def __repr__(self) -> str:
         return f"<SessionModel id={self.id}>"
+
+
+class OrderModel(Base):
+    """
+    Order model representing a purchase of a single product.
+    """
+
+    __tablename__ = "orders"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    product_id = Column(String(36), ForeignKey("products.id"), nullable=False, index=True)
+    customer_name = Column(String(255), nullable=False)
+    customer_email = Column(String(255), nullable=False, index=True)
+    shipping_address = Column(Text, nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
+    status = Column(String(50), nullable=False, index=True)
+    total_amount = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    product = relationship(
+        "ProductModel",
+        back_populates="orders",
+    )
+
+    __table_args__ = (
+        Index("ix_orders_created_at", "created_at"),
+        Index("ix_orders_status_created", "status", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<OrderModel id={self.id} status={self.status}>"
 
 
 class MessageModel(Base):

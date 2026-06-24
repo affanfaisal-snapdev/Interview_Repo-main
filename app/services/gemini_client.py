@@ -198,11 +198,29 @@ class GeminiClient:
         except httpx.HTTPStatusError as e:
             error_msg = f"Gemini API HTTP error: {e.response.status_code}"
             logger.error(error_msg)
+            error_detail_message = ""
             try:
                 error_detail = e.response.json()
                 logger.error(f"Error details: {error_detail}")
-            except:
+                if isinstance(error_detail, dict):
+                    nested_error = error_detail.get("error", {})
+                    if isinstance(nested_error, dict):
+                        error_detail_message = nested_error.get("message", "")
+                    elif nested_error:
+                        error_detail_message = str(nested_error)
+                    elif error_detail.get("message"):
+                        error_detail_message = str(error_detail.get("message"))
+                    else:
+                        error_detail_message = json.dumps(error_detail)
+                else:
+                    error_detail_message = str(error_detail)
+            except Exception:
                 logger.error(f"Error response: {e.response.text}")
+                error_detail_message = e.response.text.strip()
+
+            if error_detail_message:
+                error_msg = f"{error_msg} - {error_detail_message}"
+
             raise GeminiClientError(error_msg) from e
         except httpx.RequestError as e:
             error_msg = f"Gemini API request error: {str(e)}"
