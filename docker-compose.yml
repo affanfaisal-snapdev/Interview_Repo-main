@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  chatbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-chatbot-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - LOG_LEVEL=INFO
+      - DATABASE_URL=sqlite:///./chatbot.db
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=gemini-2.5-flash
+    volumes:
+      - ./data:/app/data
+      - chatbot_db:/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - chatbot-network
+
+volumes:
+  chatbot_db:
+
+networks:
+  chatbot-network:
+    driver: bridge

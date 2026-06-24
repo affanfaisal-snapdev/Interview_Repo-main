@@ -1,0 +1,55 @@
+# Git ignore file for Python project
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Distribution
+build/
+dist/
+*.egg-info/
+
+# Alembic
+alembic/versions/__pycache__/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/
+*.csv
+*.json.bak
