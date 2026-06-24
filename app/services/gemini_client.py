@@ -15,6 +15,10 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
+class GeminiClientError(RuntimeError):
+    """Raised when the Gemini API cannot fulfill a request."""
+
+
 class Message:
     """Represents a message in conversation history."""
 
@@ -137,8 +141,11 @@ class GeminiClient:
             Generated response text
 
         Raises:
-            RuntimeError: If API call fails
+            GeminiClientError: If API call fails
         """
+        if not self.api_key:
+            raise GeminiClientError("Gemini API key is not configured")
+
         url = f"{self.base_url}/models/{self.model}:generateContent"
 
         request_body = self._build_request_body(
@@ -171,19 +178,19 @@ class GeminiClient:
 
             # Extract text from response
             if "candidates" not in response_data or not response_data["candidates"]:
-                raise RuntimeError("No candidates in Gemini response")
+                raise GeminiClientError("No candidates in Gemini response")
 
             candidate = response_data["candidates"][0]
             if "content" not in candidate or "parts" not in candidate["content"]:
-                raise RuntimeError("Invalid response structure from Gemini")
+                raise GeminiClientError("Invalid response structure from Gemini")
 
             if not candidate["content"]["parts"]:
-                raise RuntimeError("No response parts from Gemini")
+                raise GeminiClientError("No response parts from Gemini")
 
             generated_text = candidate["content"]["parts"][0].get("text", "")
 
             if not generated_text:
-                raise RuntimeError("Empty response from Gemini")
+                raise GeminiClientError("Empty response from Gemini")
 
             logger.info(f"Successfully generated response from Gemini")
             return generated_text
@@ -196,15 +203,17 @@ class GeminiClient:
                 logger.error(f"Error details: {error_detail}")
             except:
                 logger.error(f"Error response: {e.response.text}")
-            raise RuntimeError(error_msg)
+            raise GeminiClientError(error_msg) from e
         except httpx.RequestError as e:
             error_msg = f"Gemini API request error: {str(e)}"
             logger.error(error_msg)
-            raise RuntimeError(error_msg)
+            raise GeminiClientError(error_msg) from e
+        except GeminiClientError:
+            raise
         except Exception as e:
             error_msg = f"Unexpected error calling Gemini API: {str(e)}"
             logger.error(error_msg)
-            raise RuntimeError(error_msg)
+            raise GeminiClientError(error_msg) from e
 
     async def count_tokens(self, messages: List[Message]) -> int:
         """

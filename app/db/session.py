@@ -19,21 +19,25 @@ class SessionRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_session(self) -> SessionModel:
+    def create_session(self, user_id: str) -> SessionModel:
         """
         Create a new chat session.
 
         Returns:
             Created SessionModel
         """
-        session = SessionModel()
+        session = SessionModel(user_id=user_id)
         self.db.add(session)
         self.db.commit()
         self.db.refresh(session)
         logger.info(f"Created session: {session.id}")
         return session
 
-    def get_session(self, session_id: str) -> Optional[SessionModel]:
+    def get_session(
+        self,
+        session_id: str,
+        user_id: Optional[str] = None,
+    ) -> Optional[SessionModel]:
         """
         Retrieve a session by ID.
 
@@ -43,11 +47,12 @@ class SessionRepository:
         Returns:
             SessionModel or None if not found
         """
-        return self.db.query(SessionModel).filter(
-            SessionModel.id == session_id
-        ).first()
+        query = self.db.query(SessionModel).filter(SessionModel.id == session_id)
+        if user_id is not None:
+            query = query.filter(SessionModel.user_id == user_id)
+        return query.first()
 
-    def session_exists(self, session_id: str) -> bool:
+    def session_exists(self, session_id: str, user_id: Optional[str] = None) -> bool:
         """
         Check if a session exists.
 
@@ -57,12 +62,10 @@ class SessionRepository:
         Returns:
             True if session exists, False otherwise
         """
-        return (
-            self.db.query(SessionModel)
-            .filter(SessionModel.id == session_id)
-            .count()
-            > 0
-        )
+        query = self.db.query(SessionModel).filter(SessionModel.id == session_id)
+        if user_id is not None:
+            query = query.filter(SessionModel.user_id == user_id)
+        return query.count() > 0
 
 
 class MessageRepository:

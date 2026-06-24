@@ -6,8 +6,10 @@ from typing import List
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionRepository, MessageRepository
+from app.db.models import UserModel
 from app.schemas.message import MessageData
 from app.core.logging import get_logger
+from app.services.auth import is_bypass_user
 
 logger = get_logger(__name__)
 
@@ -23,7 +25,7 @@ class ChatService:
         self.session_repo = SessionRepository(db)
         self.message_repo = MessageRepository(db)
 
-    def validate_session(self, session_id: str) -> bool:
+    def validate_session(self, session_id: str, user: UserModel) -> bool:
         """
         Validate that a session exists.
 
@@ -33,7 +35,8 @@ class ChatService:
         Returns:
             True if session exists, False otherwise
         """
-        exists = self.session_repo.session_exists(session_id)
+        user_id = None if is_bypass_user(user) else user.id
+        exists = self.session_repo.session_exists(session_id, user_id)
         if not exists:
             logger.warning(f"Session not found: {session_id}")
         return exists

@@ -5,9 +5,9 @@ LangGraph service - orchestrates the conversation graph and workflow.
 from typing import List
 import asyncio
 
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
-from app.langgraph.graph import create_chat_graph
-from app.services.gemini_client import Message
+from langchain_core.messages import HumanMessage, AIMessage
+from app.chatgraph.workflow import create_chat_graph
+from app.services.gemini_client import GeminiClientError
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -37,7 +37,8 @@ class LangGraphService:
             Assistant response text
 
         Raises:
-            RuntimeError: If workflow execution fails
+            GeminiClientError: If upstream Gemini execution fails
+            RuntimeError: If workflow execution fails for another reason
         """
         logger.info("Executing LangGraph chat workflow")
 
@@ -81,9 +82,11 @@ class LangGraphService:
 
             raise RuntimeError("No assistant response in graph output")
 
+        except GeminiClientError:
+            raise
         except Exception as e:
             logger.error(f"LangGraph workflow failed: {str(e)}")
-            raise RuntimeError(f"Workflow execution failed: {str(e)}")
+            raise RuntimeError(f"Workflow execution failed: {str(e)}") from e
 
     def get_graph_info(self) -> dict:
         """

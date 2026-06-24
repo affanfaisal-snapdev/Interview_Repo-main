@@ -6,13 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
+from app.db.models import UserModel
 from app.db.session import SessionRepository
 from app.schemas.session import (
-    SessionCreateRequest,
     SessionCreateResponse,
     SessionInfoResponse,
 )
 from app.core.logging import get_logger
+from app.services.auth import get_current_user, is_bypass_user
 
 logger = get_logger(__name__)
 
@@ -30,8 +31,8 @@ router = APIRouter()
     },
 )
 async def create_session(
-    request: SessionCreateRequest,
     db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
 ) -> SessionCreateResponse:
     """
     Create a new chat session.
@@ -50,7 +51,7 @@ async def create_session(
     """
     try:
         session_repo = SessionRepository(db)
-        session = session_repo.create_session()
+        session = session_repo.create_session(current_user.id)
 
         logger.info(f"Created new session: {session.id}")
 
@@ -79,6 +80,7 @@ async def create_session(
 async def get_session(
     session_id: str,
     db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
 ) -> SessionInfoResponse:
     """
     Get information about a specific session.
@@ -102,7 +104,8 @@ async def get_session(
     """
     try:
         session_repo = SessionRepository(db)
-        session = session_repo.get_session(session_id)
+        user_id = None if is_bypass_user(current_user) else current_user.id
+        session = session_repo.get_session(session_id, user_id)
 
         if not session:
             logger.warning(f"Session not found: {session_id}")

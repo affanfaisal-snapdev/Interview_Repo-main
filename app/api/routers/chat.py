@@ -6,8 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.base import get_db
+from app.db.models import UserModel
 from app.schemas.message import ChatRequest, ChatResponse
 from app.services.chat import ChatService
+from app.services.auth import get_current_user
+from app.services.gemini_client import GeminiClientError
 from app.services.langgraph_service import LangGraphService
 from app.core.logging import get_logger
 
@@ -17,6 +20,12 @@ router = APIRouter()
 
 # Initialize LangGraph service (singleton-like)
 langgraph_service = LangGraphService()
+
+
+def _is_upstream_ai_error(error_message: str) -> bool:
+    """Detect errors coming from the upstream AI provider."""
+    normalized = error_message.lower()
+    return "gemini api" in normalized or "gemini api key" in normalized
 
 
 @router.post(
@@ -34,6 +43,7 @@ langgraph_service = LangGraphService()
 async def send_message(
     chat_request: ChatRequest,
     db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user),
 ) -> ChatResponse:
     """
     Send a message in an existing chat session.
@@ -75,7 +85,7 @@ async def send_message(
         chat_service = ChatService(db)
 
         # Validate session exists
-        if not chat_service.validate_session(chat_request.session_id):
+        if not chat_service.validate_session(chat_request.session_id, current_user):
             logger.warning(f"Invalid session: {chat_request.session_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -85,7 +95,7 @@ async def send_message(
         logger.info(f"Processing message for session: {chat_request.session_id}")
 
         # Store user message
-        user_msg_data = chat_service.store_user_message(
+        chat_service.store_user_message(
             session_id=chat_request.session_id,
             message=chat_request.message,
         )
@@ -107,7 +117,7 @@ async def send_message(
         )
 
         # Store assistant response
-        assistant_msg_data = chat_service.store_assistant_message(
+        chat_service.store_assistant_message(
             session_id=chat_request.session_id,
             message=assistant_response,
         )
@@ -124,6 +134,23 @@ async def send_message(
             conversation_history=full_history,
         )
 
+    except GeminiClientError as e:
+        logger.error(f"Upstream AI provider error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(e),
+        )
+    except RuntimeError as e:
+        logger.error(f"Chat workflow failed: {str(e)}", exc_info=True)
+        if _is_upstream_ai_error(str(e)):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=str(e),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
     except HTTPException:
         raise
     except Exception as e:

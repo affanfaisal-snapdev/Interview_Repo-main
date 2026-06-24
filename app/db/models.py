@@ -11,6 +11,29 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
+class UserModel(Base):
+    """
+    Application user model for JWT authentication.
+    """
+
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    sessions = relationship(
+        "SessionModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
+    def __repr__(self) -> str:
+        return f"<UserModel id={self.id} email={self.email}>"
+
+
 class SessionModel(Base):
     """
     Chat session model.
@@ -20,10 +43,15 @@ class SessionModel(Base):
     __tablename__ = "sessions"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
+    user = relationship(
+        "UserModel",
+        back_populates="sessions",
+    )
     messages = relationship(
         "MessageModel",
         back_populates="session",

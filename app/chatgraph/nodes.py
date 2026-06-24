@@ -8,7 +8,7 @@ from typing import Any
 import asyncio
 
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
-from app.services.gemini_client import GeminiClient, Message
+from app.services.gemini_client import GeminiClient, GeminiClientError, Message
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -83,14 +83,9 @@ class ChatNodes:
             logger.info("Successfully called Gemini API")
             return {"messages": messages}
 
-        except Exception as e:
+        except GeminiClientError as e:
             logger.error(f"Error calling Gemini: {str(e)}")
-            # Return error message
-            from langchain_core.messages import AIMessage
-            messages.append(
-                AIMessage(content="I encountered an error processing your request. Please try again.")
-            )
-            return {"messages": messages}
+            raise
 
     def process_input_node(self, state: dict[str, Any]) -> dict[str, Any]:
         """

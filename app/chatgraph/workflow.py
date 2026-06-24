@@ -9,7 +9,7 @@ from typing import Any
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import MessagesState
 
-from app.langgraph.nodes import ChatNodes
+from app.chatgraph.nodes import ChatNodes
 from app.services.gemini_client import GeminiClient
 from app.core.logging import get_logger
 
@@ -23,10 +23,12 @@ def create_chat_state() -> type:
     Returns:
         State class
     """
+
     class ChatState(MessagesState):
         """
         Extended MessagesState for our chat workflow.
         """
+
         pass
 
     return ChatState
@@ -86,7 +88,7 @@ def get_graph_visualization() -> str:
     try:
         if hasattr(graph, "get_graph"):
             return graph.get_graph().draw_ascii()
-    except:
+    except Exception:
         pass
 
     return (

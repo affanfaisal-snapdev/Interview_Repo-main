@@ -38,6 +38,19 @@ class Settings(BaseSettings):
         "http://localhost:8000",
     ]
     ALLOWED_HOSTS: List[str] = ["*"]
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "change-this-in-production")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
+        os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60")
+    )
+    LOCAL_BYPASS_KEY: str = os.getenv(
+        "LOCAL_BYPASS_KEY",
+        "local-bypass-4f9c2a73d1e84b5aa6c8f013927db641",
+    )
+    LOCAL_BYPASS_EMAIL: str = os.getenv(
+        "LOCAL_BYPASS_EMAIL",
+        "local-bypass@example.com",
+    )
 
     # Rate limiting (placeholder)
     RATE_LIMIT_ENABLED: bool = True
@@ -67,6 +80,9 @@ class Settings(BaseSettings):
 
         if not self.GEMINI_API_KEY and self.APP_ENV == "production":
             raise ValueError("GEMINI_API_KEY is required in production")
+
+        if not self.JWT_SECRET_KEY:
+            raise ValueError("JWT_SECRET_KEY is required")
 
     class Config:
         env_file = ".env"

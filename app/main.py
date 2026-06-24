@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import sessions, chat
+from app.api.routers import auth, sessions, chat
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.db.base import create_all_tables
@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
         }
 
     # Include routers
+    app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
     app.include_router(sessions.router, prefix="/api/v1/sessions", tags=["sessions"])
     app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat"])
 
